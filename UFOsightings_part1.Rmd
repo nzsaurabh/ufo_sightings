@@ -1,0 +1,416 @@
+---
+title: "UFO sightings part 1"
+author: "Saurabh Gupta"
+date: "14 August 2018"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE )
+```
+
+## Read the Data
+
+```{r}
+
+# read data from csv file
+ufodata <- read.csv("ufo.csv")
+```
+
+## Explore the data
+
+```{r, eval=FALSE}
+# dimensions
+dim(ufodata)
+
+# first 5 rows
+head(ufodata)
+
+# last 5
+tail(ufodata)
+
+# seems sorted by time
+
+# column names
+colnames(ufodata)
+```
+
+
+```{r}
+# convert comments and dates to character format
+ufodata[, c(1,2,13)] <- lapply(ufodata[, c(1,2,13)], FUN = "as.character")
+
+# check
+#str(ufodata[, c(1,2,13)])
+```
+
+## Find missing values
+
+Duration has 265 missing values
+
+Latitude and Longitude don't have any missing but country_clean has 3178 missing
+
+Check a random sample of missing countries to find out.
+
+```{r}
+
+missfun <- function(x){sum(is.na(x))}
+
+# lapply(ufodata, FUN = missfun)
+
+
+```
+
+## Check missing country
+
+The country may be missing but location and duration data isn't. 
+
+```{r}
+
+# Vector of missing country values
+miss_country <- is.na(ufodata$country_clean)
+
+n <- nrow(ufodata)
+
+m_sample <- ufodata[miss_country & (runif(n) < 0.05), ]
+
+#head(m_sample)
+
+```
+
+## Check missing duration
+
+Check if missing duration is of a specifc city.
+
+```{r}
+
+# subset missing values
+miss_duration <- ufodata[is.na(ufodata$duration), ]
+
+# check if related to location
+miss_bycity <- table(miss_duration$city)
+
+# cities that have more than 5 missing values
+miss_bycity[miss_bycity > 5] 
+
+
+```
+
+
+Distribution of durations
+
+```{r}
+# distribution of durations
+hist(log(ufodata$duration), main = "log(duration)", sub = "excluding 265 missing values")
+
+# % Duration less than 5 seconds
+100*sum(ufodata$duration < 5)/n
+
+```
+
+
+
+## Subset non missing values
+
+265 observations of 80,331 have missing values for duration. None of the cities has more than 10 missing values so shouldn't be related to specific location. None of the remaining have duration = 0.
+
+Ideally, we should check if they are missing at random or not. However, as the proportion is quite small, for this initial analysis, I'll assume they are missing at random and subset the data.
+
+
+```{r}
+# subset the data to remove missing duration and date time
+ufodata <- ufodata[!is.na(ufodata$duration) & !is.na(ufodata$datetime), ]
+
+# reset number of rows
+n <- nrow(ufodata)
+
+# check distribution of values
+# summary(ufodata$duration)
+
+# total sightings
+# object name ufodata wasn't changed. So using is.na to avoid issues.
+nrow(ufodata[!is.na(ufodata$duration), ])
+
+```
+
+## Total number of sightings
+
+Total number of sightings are **`r nrow(ufodata[!is.na(ufodata$duration), ])`**.
+
+## Number of different countries from which the sightings originate
+
+3178 (3175 after subsetting above) observations have missing value for country_clean.
+
+We can use Geonames to get the country names for missing values but I'll leave it for now.
+
+For simplicity, I'll assume the missing values are only from the list of countries that have already been identified in the dataset.
+
+None of the existing country names seemed invalid.
+
+Number of different countries = **`r nlevels(ufodata$country_clean)`**.
+
+```{r}
+# country is a factor variable
+nlevels(ufodata$country_clean)
+
+# check if any of the country names are invalid
+# levels(ufodata$country_clean)
+```
+
+
+## Number of 'teardrop' shaped UFO sightings between 1950 and 2000 (inclusive)
+
+1932 have observations have missing values for shape. 
+
+I'll assume they are missing completely at random (ideally would need to check that).
+
+
+```{r}
+
+# subset rows without na values for convenience
+shapes <- ufodata[!is.na(ufodata$shape), c("shape", "year")]
+
+# number of teardrop shapes
+(sum_teardrop <- sum(shapes$shape == "teardrop" & 
+      shapes$year >= 1950 &
+      shapes$year <= 2000))
+
+# % values that are missing
+(pctmiss <- (n - sum(nrow(shapes)))/n)
+
+# Expected value of teardrop shapes
+round(sum_teardrop*(1+ pctmiss), 0)
+  
+```
+
+Number of teardrop shapes in the dataset = **`r sum_teardrop`**. 
+
+Assuming `r paste0(round(100*pctmiss, 2), "%")` are missing, Expected value of teardrop shaped sightings is `r round(sum_teardrop*(1+ pctmiss), 0)`
+
+
+## Create a plot of the number of sightings over time
+
+Daily data
+
+```{r}
+# load library for sql
+require(sqldf)
+
+# create number of sightings
+sightingdata <- sqldf("SELECT date, COUNT(*) as sightings
+      FROM ufodata
+      GROUP BY date")
+
+```
+
+
+Change format of date column and plot
+
+```{r}
+
+sightingdata$date <- as.Date(sightingdata$date)
+
+# head(sightingdata)
+summary(sightingdata)
+
+plot(sightingdata$date, sightingdata$sightings, 
+     type = "l",
+     main = "Global UFO sightings",
+     xlab = "Day",ylab = "Number of Sightings per day", sub = "Dates without any sighting not included")
+
+
+```
+
+Monthly Sightings
+
+As dates without sightings aren't included, look at monthly data for trends.
+
+Sightings before 1960 are very few and far between. We can subset data to look at only after 1960 for trends.
+
+Some months also don't have any sightings at all.
+
+```{r}
+
+ufodata$date <- as.Date(ufodata$date)
+
+ufodata$yearmonth <- format(ufodata$date, format="%Y-%m")
+
+#head(ufodata)
+
+data1960 <- ufodata[ufodata$date > as.Date("1960-01-01"), ]
+
+#head(data1960)
+
+monthlydata <- sqldf("SELECT date, yearmonth, COUNT(*) as sightings
+      FROM data1960
+      GROUP BY yearmonth")
+
+summary(monthlydata)
+  
+```
+
+Time series data needs observations every month.
+
+Create vector of months during the time period. There need to be 652 months in the timeframe
+
+
+```{r}
+# create sequence of months
+monthly_seq <- seq.Date(as.Date("1960-01-10"), as.Date("2014-05-10"), by = "month")
+summary(monthly_seq)
+str(monthly_seq)
+
+yearmonth_seq <- format(monthly_seq, format="%Y-%m")
+
+monthly_seq <- data.frame(date = as.Date(monthly_seq), sightings = rep(0, length(monthly_seq)))
+
+monthly_seq$yearmonth <- format(monthly_seq$date, format="%Y-%m")
+
+# Check if 5 months have no sightings
+sum( !(monthly_seq$yearmonth  %in% monthlydata$yearmonth))
+
+```
+
+Add sighting counts to relevant months
+
+```{r}
+monthly_seq$sightings[(monthly_seq$yearmonth  %in% monthlydata$yearmonth)] <- monthlydata$sightings
+```
+
+Check months with 0 counts
+
+```{r}
+
+monthly_seq[monthly_seq$sightings == 0,]
+```
+
+create time series object of monthly sightings
+
+```{r}
+
+monthly_ts <- ts(monthly_seq$sightings, frequency = 12,
+                 start = c(1960, 01))
+
+#save(monthly_ts, file = "monthly_ts")
+```
+
+
+Plot monthly time series from 1st January 1960
+
+Teh plot indicates seasonality and an increasing trend, especially, since mid 1990s. Variability also seems to have increased since 2000.
+
+```{r}
+plot(monthly_ts, main = "Global UFO sightings" ,
+     ylab = "Monthly Sightings")
+```
+
+
+
+## Obtain the 10 most frequently used words in the comments column
+
+Load library and create VCorpus object
+
+```{r}
+library(tm)
+library(qdap)
+```
+
+
+```{r, eval=FALSE}
+
+comments <- VCorpus(VectorSource(ufodata$comments))
+
+```
+
+Clean the text data
+
+[Click for reference used]{http://rstudio-pubs-static.s3.amazonaws.com/256588_57b585da6c054349825cba46685d8464.html}
+
+```{r, eval=FALSE}
+
+# make all characters lower case
+comments <- tm_map(comments, tolower)
+
+# remove punctuation
+comments <- tm_map(comments, removePunctuation)
+
+# Remove whitespace
+comments <- tm_map(comments, stripWhitespace)
+
+# Remove text within brackets
+comments <- tm_map(comments, bracketX)
+
+# Replace numbers with words
+#comments <- tm_map(comments, replace_number)
+
+# Replace abbreviations
+comments <- tm_map(comments, replace_abbreviation)
+
+# Replace contractions
+comments <- tm_map(comments, replace_contraction)
+
+# Remove standard stop words
+comments <- tm_map(comments, removeWords, stopwords("en"))
+
+```
+
+Save file so we don't need to preprocess again
+
+```{r, eval=FALSE}
+# save(comments, file = "comments.rda")
+
+load("comments.rda")
+```
+
+Split the words
+
+```{r, eval=FALSE}
+
+comment_words <- unlist(comments)
+
+comment_words <- unlist(strsplit(comment_words, split = " "))
+
+```
+
+Check frequencies
+
+```{r, eval = FALSE}
+frequent_words <- freq_terms(comment_words, 40)
+
+frequent_words
+```
+
+Stem words to their roots
+
+```{r, eval=FALSE}
+
+comment_words <- stemDocument(comment_words)
+```
+
+Load object w=in which preprocessing has been done.
+
+```{r}
+# save(comment_words, file = "comment_words.rda")
+
+load("comment_words.rda")
+```
+
+
+Check frequencies again - this looks good.
+
+```{r}
+frequent_words <- freq_terms(comment_words, 10)
+
+```
+
+Plot top 10 words
+
+```{r, include = TRUE}
+plot(frequent_words, main = "Top 10 words describing UFO sightings")
+
+```
+
+
+Time Series continued in next document.

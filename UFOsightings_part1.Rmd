@@ -293,7 +293,7 @@ create time series object of monthly sightings
 monthly_ts <- ts(monthly_seq$sightings, frequency = 12,
                  start = c(1960, 01))
 
-#save(monthly_ts, file = "monthly_ts")
+#save(monthly_ts, file = "monthly_ts.rda")
 ```
 
 

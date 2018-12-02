@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.width= 8)
 
 ```{r}
 # load time series object created in previous section
-load("monthly_ts")
+load("monthly_ts.rda")
 ```
 
 ```{r}

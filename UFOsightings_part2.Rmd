@@ -1,0 +1,292 @@
+---
+title: "UFO sightings part 2"
+author: "Saurabh Gupta"
+date: "14 August 2018"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width= 8)
+```
+
+# Time Series Analysis and Forecast
+
+```{r}
+# load time series object created in previous section
+load("monthly_ts")
+```
+
+```{r}
+plot(monthly_ts, main = "Global UFO sightings" ,
+     ylab = "Monthly Sightings")
+```
+
+Need to subset the data between 1990 and 2000 to pick up the change in trend.
+
+Also split last 12 months into test data. Rest is training.
+
+```{r}
+plot(monthly_ts[time(monthly_ts) > 1990.000], main = "Global UFO sightings" ,
+     ylab = "Monthly Sightings", type = "l")
+```
+
+The trend is stronger after 1995 but data doesn't start from 0.
+
+
+```{r}
+plot(monthly_ts[time(monthly_ts) > 1995.000], main = "Global UFO sightings" ,
+     ylab = "Monthly Sightings", type = "l")
+```
+
+Use data from 2000
+
+Check acf and pacf
+
+
+```{r}
+# Train data
+
+traindata <- window(monthly_ts, start = c(2000, 1), end = c(2013, 1))
+
+plot(traindata)
+```
+
+
+```{r}
+# Test data
+
+testdata <- window(monthly_ts, start = c(2013, 1))
+
+plot(testdata)
+```
+
+AR process with Seasonality at lag 12 months.
+
+```{r}
+acf(traindata)
+```
+
+AR with lags 8 and 10
+
+```{r}
+pacf(traindata)
+```
+
+
+check after differencing at lag 12
+
+Trend is diminished before 2010. There is still some autocorrelation.
+
+
+```{r}
+
+diff_12 <- diff(traindata, lag = 12)
+
+plot(diff_12)
+acf(diff_12)
+pacf(diff_12)
+
+```
+
+Difference at lag 1
+
+Series is much more stationary but variance is increasing. Try log transformation.
+
+```{r}
+diff_1_12 <- diff(diff_12, lag = 1)
+
+plot(diff_1_12)
+acf(diff_1_12)
+pacf(diff_1_12)
+
+
+```
+
+Log transformation. Then differencing.
+
+MA(1) and Seasonal MA(1) seems to be present.
+
+```{r}
+
+log_train <- log(traindata)
+
+diff_log_1_12 <- diff(diff(log_train, lag = 12), lag = 1)
+
+plot(diff_log_1_12)
+acf(diff_log_1_12)
+pacf(diff_log_1_12)
+
+```
+
+
+Try arima (1, 1, 1) with S = 12
+
+```{r}
+mod_111_12 <- arima(traindata, order = c(1, 1, 1), seasonal = list(order = c(1, 1, 1), period = 12), include.mean = F)
+
+mod_111_12
+```
+
+Try on log data
+
+AIC is much better on log data.
+
+```{r}
+log_mod_111_12 <- arima(log_train, order = c(1, 1, 1), seasonal = list(order = c(1, 1, 1), period = 12), include.mean = F)
+
+log_mod_111_12
+```
+
+check residuals
+
+```{r}
+acf(log_mod_111_12$residuals)
+
+pacf(log_mod_111_12$residuals)
+```
+
+
+Remove AR1 term for alternative model.
+
+AIC was better with (1,1,1) but se too high for AR1.
+
+```{r}
+log_mod_011_12 <- arima(log_train, order = c(0, 1, 1), seasonal = list(order = c(0, 1, 1), period = 12))
+
+log_mod_011_12
+```
+
+
+Check residuals.
+
+Looks reasonable.
+
+```{r}
+
+acf(log_mod_011_12$residuals)
+
+pacf(log_mod_011_12$residuals)
+
+```
+
+Test Predictions
+
+```{r}
+
+testfit <- predict(log_mod_011_12, 12)
+
+testpred <- exp(testfit$pred)
+
+ testCI_L <- exp(testfit$pred - testfit$se*1.96)
+
+ testCI_U <- exp(testfit$pred + testfit$se*1.96)
+
+ts.plot(testdata, testpred, testCI_L, testCI_U,  col = c( "black", "green", "gray", "gray"), lty = c(1,1,2,2))
+
+```
+
+R square
+
+```{r}
+# Test R square
+
+RSS <- sum((testpred - testdata[2:13])^2)
+
+TSS <- var(testdata[2:13])*11
+
+((TSS-RSS)/TSS)
+
+```
+
+Test the other model
+
+```{r}
+
+testfit2 <- predict(log_mod_111_12, 12)
+
+testpred2 <- exp(testfit2$pred)
+
+ testCI_L2 <- exp(testfit2$pred - testfit2$se*1.96)
+
+ testCI_U2 <- exp(testfit2$pred + testfit2$se*1.96)
+
+ts.plot(testdata, testpred2, testCI_L2, testCI_U2,  col = c( "black", "green", "gray", "gray"), lty = c(1,1,2,2))
+
+```
+
+R2 is much higher with ARIMA 111 model. I'll use this one for the final model.
+
+```{r}
+# Test R square
+
+RSS2 <- sum((testpred2 - testdata[2:13])^2)
+
+((TSS-RSS2)/TSS)
+
+
+```
+
+Create final model and forecast using ARIMA (1,1,1)(1,1,1)12
+
+Use data from 2000 as trend is stronger.
+
+```{r}
+
+# Use all the data from 2000 Jan
+log_ts <- log(window(monthly_ts, start = c(2000, 1)))
+
+ts_model <- arima(log_ts, order = c(1, 1, 1), seasonal = list(order = c(1, 1, 1), period = 12))
+
+ts_model
+
+
+```
+
+Forecast
+
+
+```{r}
+
+fit <- predict(ts_model, 12)
+
+pred <- exp(fit$pred)
+
+CI_L <- exp(fit$pred - fit$se*1.96)
+
+CI_U <- exp(fit$pred + fit$se*1.96)
+
+# data since 2000
+
+plotdata <- window(monthly_ts, start = c(2000, 1))
+
+ts.plot(plotdata, pred, CI_L, CI_U,  col = c( "black", "green", "gray", "gray"), lty = c(1,1,2,2),
+        main = "Global UFO sightings - 12 month forecast", ylab = "Number of Sightings",
+        xlab = "Time (Months)", sub = "Forecast Period: Jun 2014 to May 2015")
+
+legend("topleft", legend = c("Observed Data", "Forecast", "95% Confidence Interval"),
+       cex = 0.7, col = c( "black", "green", "gray", "gray"), lty = c(1,1,2,2))
+
+```
+
+Check with forecast package
+
+```{r }
+
+library(forecast)
+
+#ts2000 <- window(monthly_ts, start = c(2000, 1))
+
+ts_model2 <- Arima(log_ts, order = c(1, 1, 1), seasonal = list(order = c(1, 1, 1), period = 12))
+
+ts_model2
+
+```
+
+
+```{r}
+plot(forecast(ts_model2, h =12))
+```
+
